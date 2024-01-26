@@ -6,7 +6,7 @@
 
 // Define Structs
 
-typedef struct {
+typedef struct dataStruct {
   String meterId;
   int accumulatedValue;
 } dataStruct;
@@ -52,6 +52,7 @@ void apiCall(dataStruct data);
 // setup starts here
 void setup() {
   Serial.begin(115200);
+  Serial.println("Starting...");
 
   // initialize sd card
   if(!SD_MMC.begin()){
@@ -70,6 +71,7 @@ void setup() {
 
   // create semaphore to lock sd-card access
   sdCardMutex = xSemaphoreCreateMutex();
+
   if(sdCardMutex == NULL){
     Serial.println("Mutex creation failed");
     while(1);
@@ -150,16 +152,8 @@ void impulseDetected4() {
 // function for interrupts to use
 
 void sendImpulseDataToQueue(String meterId){
-  
-    dataStruct data;
-    data.meterId = meterId;
 
-    // reserve accumulation variable
-    data.accumulatedValue = ++accumulation;
-  
-    xQueueSendFromISR(dataQueue, &data, 0);
-  
-
+    xQueueSendFromISR(dataQueue, &meterId, 0);
 }
 
 
@@ -168,11 +162,19 @@ void sendImpulseDataToQueue(String meterId){
 void queueDataHandling(void *pvParameters){
   
     dataStruct data;
-
+    String meterId;
     while(1){
 
-      if(xQueueReceive(dataQueue, &data, 0))
+      if(xQueueReceive(dataQueue, &meterId, 0))
       {
+        data.accumulatedValue = ++accumulation;
+        data.meterId = meterId;
+        // take mutex
+        if(xSemaphoreTake(sdCardMutex, portMAX_DELAY) != pdTRUE){
+          Serial.println("Mutex failed to be taken within max delay");
+          continue;
+        }
+
         // open sd card
         File file = SD_MMC.open("/data.json", FILE_APPEND);
 
@@ -193,6 +195,9 @@ void queueDataHandling(void *pvParameters){
         // close sd card
         file.close();
 
+        // give mutex
+        xSemaphoreGive(sdCardMutex);
+
         // data is remove from queue on recieve
       }
 
@@ -205,53 +210,63 @@ void queueDataHandling(void *pvParameters){
 
 
 void sendToApi(void *pvParameters){
+  while(1){
+    // take mutex
+                      // mutex     // max delay
+    if(xSemaphoreTake(sdCardMutex, portMAX_DELAY) != pdTRUE){
+      Serial.println("Mutex failed to be taken within max delay");
+      continue;
+    }
 
+    // read file from sd card
+    File file = SD_MMC.open("/data.json", FILE_READ);
 
-  // read file from sd card
-  File file = SD_MMC.open("/data.json", FILE_READ);
+    if(!file){
+        
+        Serial.println("Failed to open file for reading");
+        return;
+    }
 
-  if(!file){
-      
-      Serial.println("Failed to open file for reading");
+    // allocate buffer for json file
+    size_t bufferSize = file.size();
+    std::unique_ptr<char[]> buf(new char[bufferSize]);
+
+    file.readBytes(buf.get(), bufferSize);
+
+    // close file
+    file.close();
+
+    // overwrite file
+    file = SD_MMC.open("/data.json", FILE_WRITE);
+    file.close();
+
+    // give mutex
+    xSemaphoreGive(sdCardMutex);
+
+    // parse json file
+    JsonDocument doc;
+    // DynamicJsonDocument doc(1024); //deprecated  
+    DeserializationError error = deserializeJson(doc, buf.get());
+
+    if(error){
+      Serial.println("Failed to parse json file");
       return;
+    }
+
+    // json to data struct
+    JsonArray array = doc.as<JsonArray>();
+
+    for (int i = 0; i < array.size(); i++)
+    {
+      dataStruct data;
+      data.meterId = array[i]["meterId"].as<String>();
+      data.accumulatedValue = array[i]["accumulatedValue"].as<int>();
+      apiCall(data);
+    }
+
+    // wait 10 seconds
+    vTaskDelay(10000 / portTICK_PERIOD_MS);
   }
-
-  // allocate buffer for json file
-  size_t bufferSize = file.size();
-  std::unique_ptr<char[]> buf(new char[bufferSize]);
-
-  file.readBytes(buf.get(), bufferSize);
-
-  // close file
-  file.close();
-
-  // overwrite file
-  file = SD_MMC.open("/data.json", FILE_WRITE);
-  file.close();
-
-
-  // parse json file
-  DynamicJsonDocument doc(1024);
-  DeserializationError error = deserializeJson(doc, buf.get());
-
-  if(error){
-    Serial.println("Failed to parse json file");
-    return;
-  }
-
-  // json to data struct
-  JsonArray array = doc.as<JsonArray>();
-
-  for (int i = 0; i < array.size(); i++)
-  {
-    dataStruct data;
-    data.meterId = array[i]["meterId"].as<String>();
-    data.accumulatedValue = array[i]["accumulatedValue"].as<int>();
-    apiCall(data);
-  }
-
-  // wait 10 seconds
-  vTaskDelay(10000 / portTICK_PERIOD_MS);
 }
 
 
