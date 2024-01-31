@@ -3,6 +3,8 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h> // need to install this library ArduinoJson by Benoit Blanchon
+#include <ETH.h>
+#include <ESP32Ping.h>
 
 // Define Structs
 
@@ -17,9 +19,9 @@ xQueueHandle dataQueue;
 SemaphoreHandle_t sdCardMutex;
 int accumulation = 0;
 
-const char* ssid = "your-ssid";
-const char* password = "your-password";
-const char* apiUrl = "https://example.com/api/data";
+// const char* ssid = "your-ssid";
+// const char* password = "your-password";
+const char* apiUrl = "Your-api-url";
 
 
 // Define the pins
@@ -63,6 +65,16 @@ void setup() {
   pinMode(impulsePin4, INPUT);
 
   Serial.println("Pins set to input");
+
+  //Ethernet stup Begin
+  if(!ETH.begin()){
+    Serial.println("Failed to initialize Ethernet");
+    delay(1000);
+    while(1);
+  }
+
+  Serial.println("Ethernet initialized");
+
 
   // WiFi.begin(ssid, password);
 
@@ -375,7 +387,15 @@ void apiCall(dataStruct data){
 
 }
 
+// const IPAddress remote_ip(8,8,8,8); // Google Public DNS
 
 void loop(){
 
+  // //ping test
+  // if(Ping.ping(remote_ip)){
+  //   Serial.println("Ping Success");
+  // } else {
+  //   Serial.println("Ping Failure");
+  // }
+  // delay(10000);
 }
