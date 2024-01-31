@@ -19,9 +19,8 @@ xQueueHandle dataQueue;
 SemaphoreHandle_t sdCardMutex;
 int accumulation = 0;
 
-// const char* ssid = "your-ssid";
-// const char* password = "your-password";
-const char* apiUrl = "Your-api-url";
+const char* apiUrl = "https://localhost:7141/api/EnergyData/";
+// const char* apiUrl = "http://10.233.134.112:2050/api/EnergyData"; // energymeter room laptop server
 
 const char* filename = "/EnergyDataTest.csv";
 
@@ -75,14 +74,6 @@ void setup() {
   }
 
   Serial.println("Ethernet initialized");
-
-
-  // WiFi.begin(ssid, password);
-
-  // while(WiFi.status() != WL_CONNECTED){
-  //   delay(500);
-  //   Serial.println("Connecting to WiFi..");
-  // }
 
   if(!setupSdCard()){
     Serial.println("sd-card setup failed...");
@@ -350,7 +341,7 @@ void sendToApi(void *pvParameters){
       int httpResponseCode = http.POST(JsonArray[i]);
 
       if (httpResponseCode == 200) {
-      Serial.println("Data posted successfully for element " + String(i));
+        Serial.println("OK Response for element " + String(i));
       } 
       else {
         Serial.println("Error posting data for element " + String(i) + ": " + http.errorToString(httpResponseCode));
