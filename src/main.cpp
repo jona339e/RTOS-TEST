@@ -21,6 +21,7 @@ const char* ssid = "your-ssid";
 const char* password = "your-password";
 const char* apiUrl = "https://example.com/api/data";
 
+const char* filename = "/EnergyDataTest.csv";
 
 // Define the pins
 const int impulsePin1 = 13; // Impulse pin
@@ -152,11 +153,15 @@ bool setupSdCard(){
   // check if sd card file exists
   // if it does not exist create it
 
-  if(!SD_MMC.exists("/data.json"))
+  if(!SD_MMC.exists(filename))
   {
 
     Serial.println("File does not exist, creating file");
-    File file = SD_MMC.open("/data.json", FILE_WRITE);
+    File file = SD_MMC.open(filename, FILE_WRITE);
+    if(file)
+    {
+      file.println("meterId,accumulatedValue");
+    }
     file.close();
   }
 
@@ -237,25 +242,23 @@ void queueDataHandling(void *pvParameters){
       // take mutex
       if(xSemaphoreTake(sdCardMutex, portMAX_DELAY) != pdTRUE){
         Serial.println("Mutex failed to be taken within max delay");
+        xSemaphoreGive(sdCardMutex);
         return;
       }
 
       // open sd card
-      File file = SD_MMC.open("/data.json", FILE_APPEND);
+      File file = SD_MMC.open(filename, FILE_APPEND);
 
       // check if file opened
       if(!file){
-
         Serial.println("Failed to open file for appending");
+        xSemaphoreGive(sdCardMutex);
         return;
 
       }
-
-      // format data as json file
-      String dataString = "{\n\t\"meterId\": \"" + data.meterId + "\",\n\t\"accumulatedValue\": " + String(data.accumulatedValue) + "\n}\n";
-
       // write data to sd card
-      file.print(dataString);
+    
+      file.println(data.meterId + "," + String(data.accumulatedValue));
 
       // close sd card
       file.close();
@@ -266,7 +269,6 @@ void queueDataHandling(void *pvParameters){
       // data is remove from queue on recieve
     }
 
-    // add vtaskdelay() ???
   }
 
 }
@@ -282,98 +284,78 @@ void sendToApi(void *pvParameters){
                       // mutex     // max delay
     if(xSemaphoreTake(sdCardMutex, portMAX_DELAY) != pdTRUE){
       Serial.println("Mutex failed to be taken within max delay");
+      xSemaphoreGive(sdCardMutex);
       return;
     }
 
     // read file from sd card
-    File file = SD_MMC.open("/data.json", FILE_READ);
+    File file = SD_MMC.open(filename, FILE_READ);
 
     if(!file){
-        
-        Serial.println("Failed to open file for reading");
-        return;
+      Serial.println("Failed to open file for reading");
+      xSemaphoreGive(sdCardMutex);
+      return;
     }
 
-    // allocate buffer for json file
-    size_t bufferSize = file.size();
-    std::unique_ptr<char[]> buf(new char[bufferSize]);
+    JsonArray JsonArray;
 
-    file.readBytes(buf.get(), bufferSize);
+    while (file.available()) {
+      String line = file.readStringUntil('\n');
+      if (line.length() > 0) {
+        // Split the CSV line into values
+        String name = line.substring(0, line.indexOf(','));
+        String value = line.substring(line.indexOf(',') + 1);
+
+        // Add data to the JSON document
+        JsonDocument jsonDocument;
+        jsonDocument["meterId"] = name;
+        jsonDocument["accumulatedValue"] = value.toInt();
+
+        JsonArray.add(jsonDocument);
+      }
+    }
 
     // close file
     file.close();
 
     // overwrite file
-    file = SD_MMC.open("/data.json", FILE_WRITE);
+    file = SD_MMC.open(filename, FILE_WRITE);
     file.close();
 
     // give mutex
     xSemaphoreGive(sdCardMutex);
 
-    // parse json file
-    JsonDocument doc;
-    // DynamicJsonDocument doc(1024); //deprecated  
-    DeserializationError error = deserializeJson(doc, buf.get());
+    // open http.client
+    HTTPClient http;
 
-    if(error){
-      Serial.println("Failed to parse json file");
-    }
-
-    if(!error){
-
-      // json to data struct
-      JsonArray array = doc.as<JsonArray>();
-
+    for (int i = 0; i < JsonArray.size(); i++)
+    {
       
+      // send data to api
+      http.begin(apiUrl);
+      http.addHeader("Content-Type", "application/json");
 
-      for (int i = 0; i < array.size(); i++)
-      {
-        dataStruct data;
-        data.meterId = array[i]["meterId"].as<String>();
-        data.accumulatedValue = array[i]["accumulatedValue"].as<int>();
-        apiCall(data);
+      int httpResponseCode = http.POST(JsonArray[i]);
+
+      if (httpResponseCode == 200) {
+      Serial.println("Data posted successfully for element " + String(i));
+      } 
+      else {
+        Serial.println("Error posting data for element " + String(i) + ": " + http.errorToString(httpResponseCode));
       }
+
+      // close http.client
+      http.end();
     }
+
     Serial.println("sendToApi Finished");
+
     vTaskDelay(10000 / portTICK_PERIOD_MS);
 
   }
 }
 
 
-void apiCall(dataStruct data){
-
-  // open wifi connection
-
-
-  Serial.println("Connected to WiFi");
-
-  // open http.client
-  HTTPClient http;
-
-  // send data to api
-  http.begin(apiUrl);
-  http.addHeader("Content-Type", "application/json");
-
-  String dataString = "{\n\t\"meterId\": \"" + data.meterId + "\",\n\t\"accumulatedValue\": " + String(data.accumulatedValue) + "\n}\n";
-
-  int httpResponseCode = http.POST(dataString);
-
-  if(httpResponseCode > 0){
-    Serial.print("HTTP Response code: ");
-    Serial.println(httpResponseCode);
-  } else {
-    Serial.print("Error code: ");
-    Serial.println(httpResponseCode);
-  }
-
-  // close http.client
-  http.end();
-
-  // close wifi connection
-  // WiFi.disconnect(true);
-
-}
 
 
 void loop(){
