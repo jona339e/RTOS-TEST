@@ -63,7 +63,6 @@ void setup() {
   pinMode(impulsePin4, INPUT);
 
   Serial.println("Pins set to input");
-  // delay(2000);
 
   // WiFi.begin(ssid, password);
 
@@ -82,33 +81,23 @@ void setup() {
     while(1);
   }
 
-  // delay(2000);
 
   Serial.println("Starting dataQueue creation");
 
-  // delay(200);
 
   dataQueue = xQueueCreate(10, sizeof(String));
 
-  // delay(200);
 
   Serial.println("dataQueue creation complete");
 
-  // delay(2000);
-
-
-
-  
   
   if(!setupInterrupts()){
     Serial.println("Interrupts setup failed...");
     while(1);
   }
 
-  // delay(2000);
     
   Serial.println("Starting xTaskCreate");
-  // delay(500);
 
   xTaskCreate(                  // create a new rtos  task
     queueDataHandling,          // the name of what function will run
@@ -119,9 +108,7 @@ void setup() {
     NULL                        // the task handle
   );
 
-  // delay(2000);
     Serial.println("First xTaskCreate Completed");
-  // delay(2000);
 
   xTaskCreate(
     sendToApi,
@@ -132,16 +119,9 @@ void setup() {
     NULL
   );
 
-  // delay(200);
   
   Serial.println("xTaskCreate complete");
 
-
-
-  // delay(2000);
-
-  // vTaskStartScheduler(); // starts rtos
-  // delay(2000);
   Serial.println("Setup done");
 }
 
@@ -166,22 +146,19 @@ bool setupSdCard(){
   while (!SD_MMC.begin())
   {
     Serial.println("SD-Card Mounting");
-    // delay(500);
   }
   Serial.println("SD-Card Mounted");
-  // delay(2000);
 
   // check if sd card file exists
   // if it does not exist create it
 
   if(!SD_MMC.exists("/data.json"))
   {
-    // delay(2000);
+
     Serial.println("File does not exist, creating file");
     File file = SD_MMC.open("/data.json", FILE_WRITE);
     file.close();
   }
-  // delay(2000);
 
   Serial.println("File exists / is created");
   return true;
@@ -190,15 +167,13 @@ bool setupSdCard(){
 
 bool setupInterrupts(){
   attachInterrupt(impulsePin1, impulseDetected1, RISING); // sets interrupt when pin goes from low to high
-  // delay(500);
 
   attachInterrupt(impulsePin2, impulseDetected2, RISING);
-  // delay(500);
 
   attachInterrupt(impulsePin3, impulseDetected3, RISING); 
-  // delay(500);
     
   attachInterrupt(impulsePin4, impulseDetected4, RISING);
+  
   Serial.println("Interrupts attached");
 
   return true;
