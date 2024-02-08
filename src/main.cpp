@@ -18,10 +18,10 @@ SemaphoreHandle_t sdCardMutex;
 int accumulation = 0;
 
 // const char* apiUrl = "http://192.168.5.132:2050/api/EnergyData/Test"; // Jonas IIS Api
-const char* apiUrl = "http://192.168.21.7:2050/api/EnergyData/Test"; // Virtuel Server SKP
+const char* apiUrl = "http://192.168.21.7:2050/api/EnergyData"; // Virtuel Server SKP
 // const char* apiUrl = "http://10.233.134.112:2050/api/EnergyData"; // energymeter room laptop server
 
-const char* filename = "/EnergyDataTest.csv";
+const char* filename = "/EnergyData.csv";
 
 // Define the pins
 const int impulsePin1 = 13; // Impulse pin
@@ -29,7 +29,7 @@ const int impulsePin2 = 16; // Impulse pin
 const int impulsePin3 = 32; // Impulse pin
 const int impulsePin4 = 33; // Impulse pin
 
-const int builtInBtn = 34;
+const int builtInBtn = 34; // bultin button to simmulate impulse
 
 
 // Define the meter ids
@@ -58,14 +58,12 @@ bool setupInterrupts();
 void setup() {
 
   Serial.begin(115200);
-  // Serial.println("Starting...");
 
   pinMode(impulsePin1, INPUT); // sets pin to input
   pinMode(impulsePin2, INPUT);
   pinMode(impulsePin3, INPUT);
   pinMode(impulsePin4, INPUT);
 
-  // Serial.println("Pins set to input");
 
   //Ethernet setup Begin
   if(!ETH.begin()){
@@ -73,8 +71,6 @@ void setup() {
     delay(1000);
     while(1);
   }
-
-  // Serial.println("Ethernet initialized");
 
   if(!setupSdCard()){
     Serial.println("sd-card setup failed...");
@@ -86,24 +82,14 @@ void setup() {
     while(1);
   }
 
+  dataQueue = xQueueCreate(20, sizeof(String));
 
-  // Serial.println("Starting dataQueue creation");
-
-
-  dataQueue = xQueueCreate(10, sizeof(String));
-
-
-  // Serial.println("dataQueue creation complete");
-
-  
-  // if(!setupInterrupts()){
-  //   Serial.println("Interrupts setup failed...");
-  //   while(1);
-  // }
+  if(!setupInterrupts()){
+    Serial.println("Interrupts setup failed...");
+    while(1);
+  }
 
   attachInterrupt(builtInBtn, buttonTest, FALLING);
-
-  // Serial.println("Starting xTaskCreate");
 
   xTaskCreate(                  // create a new rtos  task
     queueDataHandling,          // the name of what function will run
@@ -124,9 +110,6 @@ void setup() {
     2,
     NULL
   );
-
-  
-  // Serial.println("xTaskCreate complete");
 
   Serial.println("Setup done");
 }
@@ -165,7 +148,7 @@ bool setupSdCard(){
     File file = SD_MMC.open(filename, FILE_WRITE);
     if(file)
     {
-      file.println("Name,AValue");
+      file.println("EnergyMeterID,AccumulatedValue");
     }
     file.close();
 
@@ -221,33 +204,35 @@ void impulseDetected4() {
 }
 
 void buttonTest(){
-  String buttonMessage = "button";
-  xQueueSendFromISR(dataQueue, &buttonMessage, 0);
+  String meterId = "CCC6C8C4-B9DB-4C8D-39D8-08DBEF4C21FB";
+  xQueueSendFromISR(dataQueue, &meterId, 0);
 }
 
 
 // RTOS Functions
 // need to change if the sd_card library isn't working
 void queueDataHandling(void *pvParameters){
-  vTaskDelay(100 / portTICK_PERIOD_MS);
+  vTaskDelay(500 / portTICK_PERIOD_MS);
   while(1)
   {
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    vTaskDelay(20 / portTICK_PERIOD_MS);
     Serial.println("QueueDataHandling Started");
 
     dataStruct data;
     String meterId;
 
+    // take mutex
+    if(xSemaphoreTake(sdCardMutex, portMAX_DELAY) != pdTRUE){
+      Serial.println("Mutex failed to be taken within max delay");
+      xSemaphoreGive(sdCardMutex);
+      return;
+    }
+
+
     if(xQueueReceive(dataQueue, &meterId, 0))
     {
       data.accumulatedValue = ++accumulation;
       data.meterId = meterId;
-      // take mutex
-      if(xSemaphoreTake(sdCardMutex, portMAX_DELAY) != pdTRUE){
-        Serial.println("Mutex failed to be taken within max delay");
-        xSemaphoreGive(sdCardMutex);
-        return;
-      }
 
       // open sd card
       File file = SD_MMC.open(filename, FILE_APPEND);
@@ -306,6 +291,11 @@ void sendToApi(void *pvParameters){
       file.readStringUntil('\n');
     }
 
+    int httpResponseCode = 0;
+
+    if(file.available()){
+
+
     String payload = "[";
 
     while (file.available()) {
@@ -318,8 +308,8 @@ void sendToApi(void *pvParameters){
 
       // Add data to the JSON document
       JsonDocument jsonDocument;
-      jsonDocument["Name"] = name;
-      jsonDocument["AValue"] = value.toInt();
+      jsonDocument["EnergyMeterID"] = name;
+      jsonDocument["AccumulatedValue"] = value.toInt();
 
       String temp;
       serializeJson(jsonDocument, temp);
@@ -338,23 +328,24 @@ void sendToApi(void *pvParameters){
     http.begin(apiUrl);
     http.addHeader("Content-Type", "application/json");
 
-    int httpResponseCode = http.POST(payload);
+    httpResponseCode = http.POST(payload);
 
     Serial.println(httpResponseCode);
 
     // close http.client
     http.end();
 
+    }
 
     // close file
     file.close();
-    if(httpResponseCode == 200)
+    if(httpResponseCode == 201)
     {
       // overwrite file
       file = SD_MMC.open(filename, FILE_WRITE);
       if(file)
       {
-        file.println("Name,AValue");
+        file.println("EnergyMeterID,AccumulatedValue");
       }
       file.close();  
     }
@@ -362,8 +353,6 @@ void sendToApi(void *pvParameters){
 
     // give mutex
     xSemaphoreGive(sdCardMutex);
-
-    // Serial.println("sendToApi Finished");
 
     vTaskDelay(10000 / portTICK_PERIOD_MS);
 
