@@ -7,7 +7,7 @@
 // Define Structs
 
 typedef struct dataStruct {
-  String meterId;
+  char* meterId;
   int accumulatedValue;
 } dataStruct;
 
@@ -33,10 +33,10 @@ const int builtInBtn = 34; // bultin button to simmulate impulse
 
 
 // Define the meter ids
-const String meterId1 = "111";
-const String meterId2 = "222";
-const String meterId3 = "333";
-const String meterId4 = "444";
+const char* meterId1 = "CCC6C8C4-B9DB-4C8D-39D8-08DBEF4C21FB";
+const char* meterId2 = "222";
+const char* meterId3 = "333";
+const char* meterId4 = "444";
 
 
 // define functions
@@ -82,7 +82,7 @@ void setup() {
     while(1);
   }
 
-  dataQueue = xQueueCreate(20, sizeof(String));
+  dataQueue = xQueueCreate(20, sizeof(char*));
 
   if(!setupInterrupts()){
     Serial.println("Interrupts setup failed...");
@@ -140,6 +140,8 @@ bool setupSdCard(){
 
   // check if sd card file exists
   // if it does not exist create it
+
+  SD_MMC.remove(filename);
 
   if(!SD_MMC.exists(filename))
   {
@@ -204,22 +206,22 @@ void impulseDetected4() {
 }
 
 void buttonTest(){
-  String meterId = "CCC6C8C4-B9DB-4C8D-39D8-08DBEF4C21FB";
-  xQueueSendFromISR(dataQueue, &meterId, 0);
+
+  xQueueSendFromISR(dataQueue, &meterId1, 0);
 }
 
 
 // RTOS Functions
 // need to change if the sd_card library isn't working
 void queueDataHandling(void *pvParameters){
-  vTaskDelay(500 / portTICK_PERIOD_MS);
+  vTaskDelay(1000 / portTICK_PERIOD_MS);
   while(1)
   {
-    vTaskDelay(20 / portTICK_PERIOD_MS);
+    vTaskDelay(200 / portTICK_PERIOD_MS);
     Serial.println("QueueDataHandling Started");
 
     dataStruct data;
-    String meterId;
+    char* meterId;
 
     // take mutex
     if(xSemaphoreTake(sdCardMutex, portMAX_DELAY) != pdTRUE){
@@ -246,16 +248,28 @@ void queueDataHandling(void *pvParameters){
       }
       // write data to sd card
     
-      file.println(data.meterId + "," + String(data.accumulatedValue));
-      Serial.println(data.meterId + "," + String(data.accumulatedValue));
+      file.print(data.meterId);
+      file.print(",");
+      file.print(data.accumulatedValue);
 
+      file.println();
+
+      Serial.print(data.meterId);
+      Serial.print(",");
+      Serial.print(data.accumulatedValue);
+
+      
       // close sd card
       file.close();
 
       // give mutex
       xSemaphoreGive(sdCardMutex);
 
-      // data is remove from queue on recieve
+      // data is removed from queue on recieve
+    }
+    else{
+      // Serial.println("Queue is empty");
+      xSemaphoreGive(sdCardMutex);
     }
 
   }
@@ -267,12 +281,12 @@ void sendToApi(void *pvParameters){
   vTaskDelay(10000 / portTICK_PERIOD_MS);
   while(1)
   {
-    // Serial.println("sendToApi Started");
+    Serial.println("sendToApi Started");
 
     // take mutex
                       // mutex     // max delay
     if(xSemaphoreTake(sdCardMutex, portMAX_DELAY) != pdTRUE){
-      // Serial.println("Mutex failed to be taken within max delay");
+      Serial.println("Mutex failed to be taken within max delay");
       xSemaphoreGive(sdCardMutex);
       return;
     }
