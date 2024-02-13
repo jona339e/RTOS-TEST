@@ -7,9 +7,16 @@
 // Define Structs
 
 typedef struct dataStruct {
-  char* meterId;
+  const char* meterId;
   int accumulatedValue;
 } dataStruct;
+
+dataStruct meters[] = {
+  {"CCC6C8C4-B9DB-4C8D-39D8-08DBEF4C21FB", 0},
+  {"Meter2", 0},
+  {"Meter3", 0},
+  {"Meter4", 0}
+};
 
 
 // Define Variables
@@ -33,10 +40,10 @@ const int builtInBtn = 34; // bultin button to simmulate impulse
 
 
 // Define the meter ids
-const char* meterId1 = "CCC6C8C4-B9DB-4C8D-39D8-08DBEF4C21FB";
-const char* meterId2 = "222";
-const char* meterId3 = "333";
-const char* meterId4 = "444";
+// const char* meterId1 = "CCC6C8C4-B9DB-4C8D-39D8-08DBEF4C21FB";
+// const char* meterId2 = "222";
+// const char* meterId3 = "333";
+// const char* meterId4 = "444";
 
 
 // define functions
@@ -49,10 +56,10 @@ void buttonTest();
 void queueDataHandling(void *pvParameters);
 void sendToApi(void *pvParameters);
 
-
 bool setupSdCard();
 bool setupMutex();
 bool setupInterrupts();
+
 
 // setup starts here
 void setup() {
@@ -82,7 +89,7 @@ void setup() {
     while(1);
   }
 
-  dataQueue = xQueueCreate(20, sizeof(char*));
+  dataQueue = xQueueCreate(20, sizeof(int*));
 
   if(!setupInterrupts()){
     Serial.println("Interrupts setup failed...");
@@ -161,6 +168,7 @@ bool setupSdCard(){
 
 }
 
+
 bool setupInterrupts(){
   attachInterrupt(impulsePin1, impulseDetected1, RISING); // sets interrupt when pin goes from low to high
 
@@ -176,38 +184,40 @@ bool setupInterrupts(){
 }
 
 
+
+
 // Interrupt functions
 
 void impulseDetected1() {
-
-  xQueueSendFromISR(dataQueue, &meterId1, 0);
+  int meter = 0;
+  xQueueSendFromISR(dataQueue, &meter, 0);
 
 }
 
 
 void impulseDetected2() {
-
-  xQueueSendFromISR(dataQueue, &meterId2, 0);
+  int meter = 1;
+  xQueueSendFromISR(dataQueue, &meter, 0);
 
 }
 
 
 void impulseDetected3() {
-
-  xQueueSendFromISR(dataQueue, &meterId3, 0);
+  int meter = 2;
+  xQueueSendFromISR(dataQueue, &meter, 0);
 
 }
 
 
 void impulseDetected4() {
-
-  xQueueSendFromISR(dataQueue, &meterId4, 0);
+  int meter = 3;
+  xQueueSendFromISR(dataQueue, &meter, 0);
 
 }
 
 void buttonTest(){
-
-  xQueueSendFromISR(dataQueue, &meterId1, 0);
+  int meter = 0;
+  xQueueSendFromISR(dataQueue, &meter, 0);
 }
 
 
@@ -220,8 +230,7 @@ void queueDataHandling(void *pvParameters){
     vTaskDelay(200 / portTICK_PERIOD_MS);
     Serial.println("QueueDataHandling Started");
 
-    dataStruct data;
-    char* meterId;
+    int meterIndex;
 
     // take mutex
     if(xSemaphoreTake(sdCardMutex, portMAX_DELAY) != pdTRUE){
@@ -231,10 +240,9 @@ void queueDataHandling(void *pvParameters){
     }
 
 
-    if(xQueueReceive(dataQueue, &meterId, 0))
+    if(xQueueReceive(dataQueue, &meterIndex, 0))
     {
-      data.accumulatedValue = ++accumulation;
-      data.meterId = meterId;
+      meters[meterIndex].accumulatedValue++;
 
       // open sd card
       File file = SD_MMC.open(filename, FILE_APPEND);
@@ -248,15 +256,17 @@ void queueDataHandling(void *pvParameters){
       }
       // write data to sd card
     
-      file.print(data.meterId);
+      file.print(meters[meterIndex].meterId);
       file.print(",");
-      file.print(data.accumulatedValue);
+      file.print(meters[meterIndex].accumulatedValue);
 
       file.println();
 
-      Serial.print(data.meterId);
+      Serial.print(meters[meterIndex].meterId);
       Serial.print(",");
-      Serial.print(data.accumulatedValue);
+      Serial.print(meters[meterIndex].accumulatedValue);
+      Serial.println();
+      Serial.println("Data written to file");
 
       
       // close sd card
@@ -353,7 +363,7 @@ void sendToApi(void *pvParameters){
 
     // close file
     file.close();
-    if(httpResponseCode == 201)
+    if(httpResponseCode == 204)
     {
       // overwrite file
       file = SD_MMC.open(filename, FILE_WRITE);
