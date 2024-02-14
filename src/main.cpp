@@ -31,10 +31,10 @@ const char* apiUrl = "http://192.168.21.7:2050/api/EnergyData"; // Virtuel Serve
 const char* filename = "/EnergyData.csv";
 
 // Define the pins
-const int impulsePin1 = 13; // Impulse pin
-const int impulsePin2 = 16; // Impulse pin
-const int impulsePin3 = 32; // Impulse pin
-const int impulsePin4 = 33; // Impulse pin
+const int impulsePin1 = 16; // Impulse pin
+const int impulsePin2 = 32; // Impulse pin
+const int impulsePin3 = 33; // Impulse pin
+const int impulsePin4 = 36; // Impulse pin
 
 const int builtInBtn = 34; // bultin button to simmulate impulse
 
@@ -70,31 +70,18 @@ void setup() {
   pinMode(impulsePin2, INPUT);
   pinMode(impulsePin3, INPUT);
   pinMode(impulsePin4, INPUT);
+  pinMode(builtInBtn, PULLDOWN);
 
 
-  //Ethernet setup Begin
-  if(!ETH.begin()){
-    Serial.println("Failed to initialize Ethernet");
-    delay(1000);
-    while(1);
-  }
+  ETH.begin();
 
-  if(!setupSdCard()){
-    Serial.println("sd-card setup failed...");
-    while(1);
-  }
- 
-  if(!setupMutex()){
-    Serial.println("Mutex Creation Failed");
-    while(1);
-  }
+  setupSdCard();
+
+  setupMutex();
 
   dataQueue = xQueueCreate(20, sizeof(int*));
 
-  if(!setupInterrupts()){
-    Serial.println("Interrupts setup failed...");
-    while(1);
-  }
+  setupInterrupts();
 
   attachInterrupt(builtInBtn, buttonTest, FALLING);
 
@@ -107,7 +94,6 @@ void setup() {
     NULL                        // the task handle
   );
 
-    // Serial.println("First xTaskCreate Completed");
 
   xTaskCreate(
     sendToApi,
@@ -127,11 +113,8 @@ bool setupMutex(){
   // create semaphore to lock sd-card access
   while(sdCardMutex == NULL)
   {
-    // delay(2000);
     sdCardMutex = xSemaphoreCreateMutex();
   }
-  // delay(2000);
-  Serial.println("Mutex created");
   return true;
 }
 
@@ -139,31 +122,24 @@ bool setupMutex(){
 bool setupSdCard(){
    // initialize sd card
 
-  while (!SD_MMC.begin())
-  {
-    Serial.println("SD-Card Mounting");
-  }
-  Serial.println("SD-Card Mounted");
+  SD_MMC.begin();
+
 
   // check if sd card file exists
   // if it does not exist create it
 
-  SD_MMC.remove(filename);
+  // SD_MMC.remove(filename);
 
   if(!SD_MMC.exists(filename))
   {
-
-    // Serial.println("File does not exist, creating file");
     File file = SD_MMC.open(filename, FILE_WRITE);
     if(file)
     {
       file.println("EnergyMeterID,AccumulatedValue");
     }
     file.close();
-
   }
 
-  // Serial.println("File exists / is created");
   return true;
 
 }
@@ -178,7 +154,6 @@ bool setupInterrupts(){
     
   attachInterrupt(impulsePin4, impulseDetected4, RISING);
   
-  // Serial.println("Interrupts attached");
 
   return true;
 }
@@ -227,8 +202,8 @@ void queueDataHandling(void *pvParameters){
   vTaskDelay(1000 / portTICK_PERIOD_MS);
   while(1)
   {
-    vTaskDelay(200 / portTICK_PERIOD_MS);
-    Serial.println("QueueDataHandling Started");
+    vTaskDelay(20 / portTICK_PERIOD_MS);
+    // Serial.println("QueueDataHandling Started");
 
     int meterIndex;
 
@@ -261,24 +236,20 @@ void queueDataHandling(void *pvParameters){
       file.print(meters[meterIndex].accumulatedValue);
 
       file.println();
-
-      Serial.print(meters[meterIndex].meterId);
-      Serial.print(",");
-      Serial.print(meters[meterIndex].accumulatedValue);
-      Serial.println();
-      Serial.println("Data written to file");
-
-      
       // close sd card
       file.close();
 
       // give mutex
       xSemaphoreGive(sdCardMutex);
 
+      Serial.print(meters[meterIndex].meterId);
+      Serial.print(",");
+      Serial.print(meters[meterIndex].accumulatedValue);
+      Serial.println();
+
       // data is removed from queue on recieve
     }
     else{
-      // Serial.println("Queue is empty");
       xSemaphoreGive(sdCardMutex);
     }
 
@@ -305,7 +276,6 @@ void sendToApi(void *pvParameters){
     File file = SD_MMC.open(filename, FILE_READ);
 
     if(!file){
-      // Serial.println("Failed to open file for reading");
       xSemaphoreGive(sdCardMutex);
       return;
     }
@@ -374,7 +344,6 @@ void sendToApi(void *pvParameters){
       file.close();  
     }
     
-
     // give mutex
     xSemaphoreGive(sdCardMutex);
 
@@ -382,7 +351,6 @@ void sendToApi(void *pvParameters){
 
   }
 }
-
 
 
 void loop(){
