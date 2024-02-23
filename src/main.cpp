@@ -22,7 +22,7 @@ dataStruct meters[] = {
 // Define Variables
 xQueueHandle dataQueue;
 SemaphoreHandle_t sdCardMutex;
-int accumulation = 0;
+// int accumulation = 0;
 
 // const char* apiUrl = "http://192.168.5.132:2050/api/EnergyData/Test"; // Jonas IIS Api
 const char* apiUrl = "http://192.168.21.7:2050/api/EnergyData"; // Virtuel Server SKP
